@@ -1,0 +1,36 @@
+{
+    "connection":{
+        "host":"0.0.0.0",
+        "port":"7070"
+    },
+
+    "html":{
+        "enabled":"True",
+        "brand":"c2/api name here",
+        "brand-link":"t.me/yourchannelname"
+    },
+
+    "attacks":{
+        "enabled":"True",
+        "global_cons":"5",
+        "blacklisted":{
+            "hosts":[
+                "1.1.1.1",
+                ".gov"
+            ],
+            "ports":[
+                "19",
+                "20"
+            ]
+        },
+        "methods":{
+            "wow":{
+                "enabled":"True",
+                "type":"L4",
+                "apis":[
+                    "https://test-api.lol/api/attack?host={HOST}&port={PORT}&time={TIME}&method=wow"
+                ]
+            }
+        }
+    }
+}
