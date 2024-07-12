@@ -55,13 +55,28 @@ class API():
                 time = val['time']
                 cooldown = val['cooldown']
                 secrets[secret] = f'{cons}:{time}:{cooldown}'
+
+        # concurrent tracker
+
+        for secret,val in self.secrets.items():
+            if secret not in concurrents:
+                concurrents[secret] = '0'
+
+        # secret updating (removing from the json file will remove them from the dicts/tables (in theory :skull:))
         
         try:
             for secret in secrets:
                 if secret not in self.secrets:
                     secrets.pop(secret)
+            
+            for secret in concurrents:
+                if secret not in self.secrets:
+                    concurrents.pop(secret)
         except RuntimeError:
             pass
+
+        print(f'secret list: {secrets}')
+        print(f'concurrent list: {concurrents}')
 
     @staticmethod
     def attack(host: str, port: str, time: str, method: str, cooldown: int, secret) -> None:
@@ -69,6 +84,7 @@ class API():
         used_cons += 1
 
         global cooldowns
+        global concurrents
 
         for api in json.load(open('config.json'))['attacks']['methods']['wow']['apis']:
             try:
@@ -90,6 +106,7 @@ class API():
         Global Cons In Use ({used_cons}/{API().global_cons})
         ''')
 
+        concurrents[secret] = str(int(int(concurrents[secret]) + 1))
         cooldowns.append(str(secret))
 
         t.sleep(int(time))
@@ -108,6 +125,7 @@ class API():
   
         t.sleep(int(cooldown))
 
+        concurrents[secret] = str(int(int(concurrents[secret]) - 1))
         cooldowns.remove(str(secret))
 
 @app.route('/api/attack')
@@ -130,9 +148,14 @@ def attack():
                 'status':f'invalid secret, purchase at {API().brand_link}',
             })
         else:
-            cons = str(secrets[secret]).split(':')[0]
+            cons = int(str(secrets[secret]).split(':')[0])
+            used = int(concurrents[secret])
             timee = str(secrets[secret]).split(':')[1]
             cooldown = str(secrets[secret]).split(':')[2]
+        if used == cons:
+            return flask.jsonify({
+                'status':f'you are using {str(used)}/{str(cons)} of your concurrents.',
+            })  
         if int(time) > int(timee):
             return flask.jsonify({
                 'status':f'your plans maximum time is {timee}s',
