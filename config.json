@@ -1,7 +1,7 @@
 {
     "connection":{
         "host":"0.0.0.0",
-        "port":"7070"
+        "port":"1337"
     },
 
     "html":{
@@ -23,12 +23,29 @@
                 "20"
             ]
         },
+        "raw":{
+            "host":"",
+            "port":"",
+            "username":"",
+            "password":"",
+            "methods":{
+                "udpflood":{
+                    "enabled":"True",
+                    "type":"L4",
+                    "usage":".udpflood {HOST} {TIME} port={PORT}"
+                },
+                "tcpflood":{
+                    "enabled":"True",
+                    "type":"L4",
+                    "usage":".tcpflood {HOST} {TIME} port={PORT}"
+                }
+            }
+        },
         "methods":{
             "wow":{
                 "enabled":"True",
                 "type":"L4",
                 "apis":[
-                    "https://test-api.lol/api/attack?host={HOST}&port={PORT}&time={TIME}&method=wow"
                 ]
             }
         }
